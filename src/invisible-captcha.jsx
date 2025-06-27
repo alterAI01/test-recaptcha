@@ -2,11 +2,12 @@ import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import './App.css'
 import axios from 'axios'
 
-// Кастомный компонент для видимой reCAPTCHA v2 (чекбокс)
-const RecaptchaCheckbox = forwardRef(({ sitekey, onVerify }, ref) => {
+// Кастомный компонент для invisible reCAPTCHA
+const Recaptcha = forwardRef(({ sitekey, onVerify }, ref) => {
   const widgetId = useRef(null)
   const containerRef = useRef(null)
 
+  // Загружаем скрипт reCAPTCHA только один раз
   useEffect(() => {
     if (window.grecaptcha) {
       renderRecaptcha()
@@ -27,21 +28,22 @@ const RecaptchaCheckbox = forwardRef(({ sitekey, onVerify }, ref) => {
     // eslint-disable-next-line
   }, [])
 
+  // Рендерим капчу
   function renderRecaptcha() {
     if (!window.grecaptcha || widgetId.current !== null) return
     widgetId.current = window.grecaptcha.render(containerRef.current, {
       sitekey,
-      size: 'normal',
+      size: 'invisible',
       callback: onVerify,
     })
   }
 
+  // Делаем execute доступным через ref
   useImperativeHandle(ref, () => ({
-    getValue: () => {
+    execute: () => {
       if (window.grecaptcha && widgetId.current !== null) {
-        return window.grecaptcha.getResponse(widgetId.current)
+        window.grecaptcha.execute(widgetId.current)
       }
-      return ''
     },
     reset: () => {
       if (window.grecaptcha && widgetId.current !== null) {
@@ -58,26 +60,27 @@ function App() {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
 
-  async function submitForm(event) {
-    event.preventDefault()
-    const captchaValue = recaptcha.current.getValue()
-    if (!captchaValue) {
-      alert('Please verify the reCAPTCHA!')
+  async function onRecaptcha(token) {
+    const res = await fetch('http://localhost:8000/verify', {
+      method: 'POST',
+      body: JSON.stringify({ captchaValue: token }),
+      headers: {
+        'content-type': 'application/json',
+      },
+    })
+    const data = await res.json()
+    if (data.success) {
+      alert('Form submission successful!')
     } else {
-      const res = await fetch('http://localhost:8000/verify', {
-        method: 'POST',
-        body: JSON.stringify({ captchaValue }),
-        headers: {
-          'content-type': 'application/json',
-        },
-      })
-      const data = await res.json()
-      if (data.success) {
-        alert('Form submission successful!')
-      } else {
-        alert('reCAPTCHA validation failed!')
-      }
-      recaptcha.current.reset()
+      alert('reCAPTCHA validation failed!')
+    }
+    recaptcha.current.reset()
+  }
+
+  function submitForm(event) {
+    event.preventDefault()
+    if (recaptcha.current) {
+      recaptcha.current.execute()
     }
   }
 
@@ -102,10 +105,10 @@ function App() {
           onChange={(event) => setName(event.target.value)}
         />
         <button type="submit">Sign up</button>
-        <RecaptchaCheckbox
+        <Recaptcha
           ref={recaptcha}
           sitekey={process.env.REACT_APP_SITE_KEY}
-          onVerify={() => { }}
+          onVerify={onRecaptcha}
         />
       </form>
     </div>
